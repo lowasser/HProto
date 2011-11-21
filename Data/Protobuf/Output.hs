@@ -1,14 +1,19 @@
 {-# LANGUAGE BangPatterns, RecordWildCards #-}
 {-# OPTIONS -funbox-strict-fields #-}
-module Data.Protobuf.Output (Output, writePrim) where
+module Data.Protobuf.Output (Output, writePrim, writeBytes) where
 
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
+import Data.ByteString
 import Data.ByteString.Internal
+import Data.ByteString.Unsafe
 import Data.Word
+import Foreign.Ptr
 import Foreign.ForeignPtr.Safe
 import Foreign.Storable
 import Foreign.Marshal.Array
+
+import Prelude hiding (length)
 
 {-# INLINE chunkSize #-}
 chunkSize :: Int
@@ -44,3 +49,17 @@ writePrim !x = Output $ \ buf@OutBuf{..} ->
 	pokeByteOff ptr 0 x
 	return (OutResult OutBuf{currentChunk = newChunk, currentChunkIndex = sz, doneChunks = doneChunks |> doneChunk} ())
   where !sz = sizeOf x
+
+writeBytes :: ByteString -> Output ()
+writeBytes !bytes = Output $ \ buf@OutBuf{..} -> unsafeUseAsCStringLen bytes $ \ (srcPtr, len) ->
+  if currentChunkIndex + len <= chunkSize
+    then withForeignPtr currentChunk $ \ dstPtr -> do
+      copyArray dstPtr (castPtr srcPtr) len
+      return $ OutResult buf{currentChunkIndex = currentChunkIndex + len} ()
+    else withForeignPtr currentChunk $ \ dstPtr -> do
+      let !space = chunkSize - currentChunkIndex - len
+      copyArray dstPtr (castPtr srcPtr) space
+      let doneChunk = fromForeignPtr currentChunk 0 chunkSize
+      newChunk <- mallocForeignPtrBytes chunkSize
+      runOutput (writeBytes $ unsafeDrop space bytes) OutBuf{currentChunk = newChunk, currentChunkIndex = 0,
+	doneChunks = doneChunks |> doneChunk}
