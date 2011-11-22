@@ -1,11 +1,12 @@
-{-# LANGUAGE NamedFieldPuns, BangPatterns, RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns, BangPatterns, RecordWildCards, TemplateHaskell #-}
 {-# OPTIONS -funbox-strict-fields #-}
-module Data.Protobuf.Wire (WireType(..), SerialWire(..), writeSerialWire, readSerialWire) where
+module Data.Protobuf.Wire (WireType(..), SerialWire(..), writeSerialWire, readSerialWire, getSerialCon) where
 
 import Data.Bits
 import Data.Word
 import Data.Protobuf.Input
 import Data.Protobuf.Output
+import Language.Haskell.TH
 import qualified Data.ByteString as BS
 
 data WireType =
@@ -20,6 +21,12 @@ data SerialWire =
   | WireFixed64 {fieldIndex :: !Word, wireFixed64 :: !Word64}
   | WireLengthDelimited {fieldIndex :: !Word, wireLengthDelimited :: !BS.ByteString}
   | WireFixed32 {fieldIndex :: !Word, wireFixed32 :: !Word32}
+
+getSerialCon :: WireType -> Name
+getSerialCon VarInt = 'WireVarInt
+getSerialCon Fixed64 = 'WireFixed64
+getSerialCon LengthDelimited = 'WireLengthDelimited
+getSerialCon Fixed32 = 'WireFixed32
 
 {-# SPECIALIZE writeVarInt :: Word -> Output (), Word8 -> Output (), Word64 -> Output () #-}
 writeVarInt :: (Integral a, Bits a) => a -> Output ()

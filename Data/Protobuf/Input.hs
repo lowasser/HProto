@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, BangPatterns #-}
 {-# OPTIONS -funbox-strict-fields #-}
-module Data.Protobuf.Input (Input, readPrim, readBytes) where
+module Data.Protobuf.Input (Input, readPrim, readBytes, isEOF, execInput) where
 
 import Control.Monad
 import Data.Word
@@ -8,7 +8,7 @@ import Data.ByteString
 import Data.ByteString.Unsafe
 import Data.ByteString.Internal
 import Foreign.Storable
-import Prelude hiding (length, splitAt)
+import Prelude hiding (length, splitAt, null)
 
 data InputState a = Failure String | Success a !ByteString
 
@@ -25,6 +25,16 @@ instance MonadPlus Input where
   m1 `mplus` m2 = Input $ \ src -> case runInput m1 src of
     result@Success{} -> result
     Failure{} -> runInput m2 src
+
+execInput :: Input a -> ByteString -> a
+execInput m src = case runInput m src of
+  Failure msg -> error msg
+  Success result rest
+    | null rest	-> result
+    | otherwise -> error "Did not consume all of the input"
+
+isEOF :: Input Bool
+isEOF = Input $ \ src -> Success (null src) src
 
 {-# SPECIALIZE readPrim :: Input Word8, Input Word64 #-}
 readPrim :: forall a . Storable a => Input a

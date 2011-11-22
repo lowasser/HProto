@@ -1,9 +1,10 @@
 {-# LANGUAGE BangPatterns, RecordWildCards #-}
 {-# OPTIONS -funbox-strict-fields #-}
-module Data.Protobuf.Output (Output, writePrim, writeBytes) where
+module Data.Protobuf.Output (Output, writePrim, writeBytes, execOutput) where
 
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
+import qualified Data.Foldable as Fold
 import Data.ByteString
 import Data.ByteString.Internal
 import Data.ByteString.Unsafe
@@ -13,7 +14,7 @@ import Foreign.ForeignPtr.Safe
 import Foreign.Storable
 import Foreign.Marshal.Array
 
-import Prelude hiding (length)
+import Prelude hiding (length, concat)
 
 {-# INLINE chunkSize #-}
 chunkSize :: Int
@@ -33,6 +34,12 @@ instance Monad Output where
   m >>= k = Output $ \ buf -> do
     OutResult buf' a <- runOutput m buf
     runOutput (k a) buf'
+
+execOutput :: Output a -> ByteString
+execOutput m = inlinePerformIO $ do
+  firstChunk <- mallocForeignPtrBytes chunkSize
+  OutResult OutBuf{..} _ <- runOutput m (OutBuf firstChunk 0 Seq.empty)
+  return $ concat $ Fold.toList (doneChunks |> fromForeignPtr currentChunk 0 currentChunkIndex)
 
 {-# SPECIALIZE writePrim :: Word8 -> Output () #-}
 {-# SPECIALIZE writePrim :: Word64 -> Output () #-}
